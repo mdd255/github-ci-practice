@@ -26,6 +26,7 @@ runs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         cache-dependency-path: 'package-lock.json'
+      continue-on-error: true
 
     - name: Install dependencies
       if: inputs.install-deps == true
