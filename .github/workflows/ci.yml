@@ -25,7 +25,7 @@ jobs:
     steps:
       # Step 1: Set up Nodejs
       - name: Setup Node.js and Dependencies
-        uses: ./.github/setup-node.yml
+        uses: ./.github/setup-node
 
       # Step 2: Run linting (code style & quality)
       - name: Run ESLint
@@ -78,20 +78,13 @@ jobs:
     needs: test
 
     steps:
-      # Step 1: Set up Docker Buildx (advanced Docker features)
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Step 2: Build Docker image (without pushing)
+      # Step 1: Build Docker image (without pushing)
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: ./.github/docker-build
         with:
-          context: .
-          file: ./Dockerfile
           push: false
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          platforms: linux/amd64
 
       # Step 3: Test the built image
       - name: Test Docker image
