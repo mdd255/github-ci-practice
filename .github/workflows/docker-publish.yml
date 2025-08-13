@@ -1,0 +1,305 @@
+name: Docker Build & Publish
+description: Build and publish Docker images to GitHub Container Registry
+
+env:
+  REGISTRY: ghcr.io
+
+# Trigger on:
+# 1. Push to main (deploy to production)
+# 2. Push to develop (deploy to staging) 
+# 3. Manual trigger with environment selection
+on:
+  push:
+    branches: [ main, develop ]
+    # Only trigger if there are changes to the application
+    paths:
+      - 'src/**'
+      - 'package*.json'
+      - 'Dockerfile*'
+      - '.github/workflows/docker-publish.yml'
+
+  # Allow manual workflow dispatch
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+      tag:
+        description: 'Custom tag (optional)'
+        required: false
+        type: string
+
+# Cancel in-progress workflows
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job 1: Build and push Docker images
+  build-and-push:
+    name: 🐳 Build & Push Docker Images
+    runs-on: ubuntu-latest
+
+    # Required permissions for GitHub Packages
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tags: ${{ steps.meta.outputs.tags }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Step 1: Set up Docker Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # Step 2: Log in to GitHub Container Registry
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # Step 3: Extract metadata for tags and labels
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.repository }}
+        tags: |
+          # For main branch - production tags
+          type=ref,event=branch,enable={{is_default_branch}}
+          type=raw,value=production,enable={{is_default_branch}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+          # For develop branch - staging tags  
+          type=ref,event=branch,enable=${{ github.ref == 'refs/heads/develop' }}
+          type=raw,value=staging,enable=${{ github.ref == 'refs/heads/develop' }}
+
+          # For manual dispatch - use input
+          type=raw,value=${{ github.event.inputs.environment }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+
+          # Always include commit SHA for traceability
+          type=sha,prefix={{branch}}-
+
+          # For pull requests
+          type=ref,event=pr
+
+        labels: |
+          org.opencontainers.image.title=Learning API
+          org.opencontainers.image.description=NestJS API for learning Docker, Kubernetes, and CI/CD
+          org.opencontainers.image.vendor=Learning Project
+
+    # Step 4: Build and push multi-platform Docker image
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        platforms: linux/amd64,linux/arm64  # Multi-platform support
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+        # Advanced caching for faster builds
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+        # Build arguments
+        build-args: |
+          NODE_VERSION=18
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          VCS_REF=${{ github.sha }}
+
+    # Step 5: Generate SBOM (Software Bill of Materials) for security
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.repository }}:${{ github.sha }}
+        format: 'spdx-json'
+        output-file: 'sbom.spdx.json'
+
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-${{ github.sha }}
+        path: sbom.spdx.json
+        retention-days: 90
+
+  # Job 2: Security scan the built image
+  security-scan:
+    name: 🔒 Security Scan Image
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    permissions:
+      contents: read
+      packages: read
+      security-events: write  # For uploading SARIF results
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # Step 1: Scan image with Trivy (vulnerability scanner)
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.repository }}:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    # Step 2: Upload scan results to GitHub Security tab
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()  # Upload even if scan finds issues
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    # Step 3: Create human-readable security report
+    - name: Generate security report
+      run: |
+        echo "=== Docker Image Security Report ===" > security-report.md
+        echo "**Image:** ${{ needs.config.outputs.registry }}/${{ needs.config.outputs.image-name }}:${{ github.sha }}" >> security-report.md
+        echo "**Scan Date:** $(date)" >> security-report.md
+        echo "" >> security-report.md
+
+        # Run Trivy again for table output
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy:latest image --format table \
+          ${{ needs.config.outputs.registry }}/${{ needs.config.outputs.image-name }}:${{ github.sha }} >> security-report.md || true
+
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-report-${{ github.sha }}
+        path: security-report.md
+        retention-days: 90
+
+  # Job 3: Test the deployed image
+  image-test:
+    name: 🧪 Test Deployed Image
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    services:
+      # Test database
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          
+      # Test Redis
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # Step 1: Test the image can start and respond
+    - name: Test image startup
+      run: |
+        # Pull and run the image
+        docker run --rm --name api-test \
+          --network ${{ job.container.network }} \
+          -e DATABASE_URL="postgresql://postgres:testpass@postgres:5432/testdb" \
+          -e REDIS_URL="redis://redis:6379" \
+          -e JWT_SECRET="test-secret" \
+          -d -p 3000:3000 \
+          ${{ needs.config.outputs.registry }}/${{ needs.config.outputs.image-name }}:${{ github.sha }}
+
+        # Wait for startup
+        sleep 15
+
+        # Test health endpoint
+        curl -f http://localhost:3000/api/v1/health || exit 1
+
+        # Test API documentation
+        curl -f http://localhost:3000/api/docs || exit 1
+
+        echo "✅ Image test passed!"
+
+        # Cleanup
+        docker stop api-test
+
+  # Job 4: Notify deployment status
+  deployment-status:
+    name: 📢 Deployment Status
+    runs-on: ubuntu-latest
+    needs: [build-and-push, security-scan, image-test]
+    if: always()
+
+    steps:
+    - name: Determine environment
+      id: env
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "environment=production" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+          echo "environment=staging" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+        else
+          echo "environment=development" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create deployment summary
+      run: |
+        echo "## 🚀 Docker Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** ${{ needs.build-and-push.outputs.image-tags }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Actor:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Job Results:" >> $GITHUB_STEP_SUMMARY
+        echo "- Build & Push: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY  
+        echo "- Image Test: ${{ needs.image-test.result }}" >> $GITHUB_STEP_SUMMARY
+        
+        # Check for failures
+        if [[ "${{ needs.build-and-push.result }}" != "success" ]] || 
+           [[ "${{ needs.image-test.result }}" != "success" ]]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "❌ **Deployment failed!** Check the job logs above." >> $GITHUB_STEP_SUMMARY
+          exit 1
+        else
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
+        fi

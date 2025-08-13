@@ -1,0 +1,54 @@
+# Dependabot configuration for automated dependency updates
+# This keeps our dependencies secure and up-to-date
+#
+version: 2
+updates:
+  # NPM dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    # Group minor and patch updates together
+    groups:
+      development-dependencies:
+        patterns:
+          - "@types/*"
+          - "jest*"
+          - "@nestjs/*"
+        update-types:
+          - "minor"
+          - "patch"
+      production-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@types/*"
+          - "jest*"
+        update-types:
+          - "patch"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "your-username"  # Replace with actual username
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "docker"
+      include: "scope"

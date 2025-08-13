@@ -1,0 +1,36 @@
+name: 'Setup Node.js and Dependencies'
+description: 'Setup Node.js with caching and optionally install dependencies'
+author: 'Learning Project'
+
+env:
+  NODE_VERSION: 24
+
+inputs:
+  install-deps:
+    description: 'Whether to run npm ci to install dependencies'
+    required: false
+    default: true
+
+outputs:
+  cache-hit:
+    description: 'Whether npm cache was hit'
+    value: ${{ steps.setup-node.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      id: setup-node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: npm
+        cache-dependency-path: '**/package-lock.json'
+
+    - name: Install dependencies
+      if: inputs.install-deps == true
+      shell: bash
+      run: npm ci
