@@ -28,7 +28,11 @@ runs:
         cache-dependency-path: 'package-lock.json'
       continue-on-error: true
 
+    - name: Check if parameters are set
+      id: check-params
+      run: echo "inputs.install-deps: ${{ inputs.install-deps }}"
+
     - name: Install dependencies
-      # if: inputs.install-deps == true
+      if: inputs.install-deps == true
       shell: bash
       run: npm ci
