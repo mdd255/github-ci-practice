@@ -55,7 +55,7 @@ jobs:
     steps:
       # Step 1: Set up Nodejs
       - name: Setup Node.js and Dependencies
-        uses: ./.github/setup-node.yml
+        uses: ./.github/setup-node
 
       # Step 2: Audit npm packages for vulnerabilities
       - name: Audit npm packages
@@ -146,7 +146,7 @@ jobs:
 
     steps:
     - name: Setup Node.js and Dependencies
-      uses: ./.github/actions/setup-node-deps
+      uses: ./.github/setup-node
 
     - name: Build application
       run: npm run build
