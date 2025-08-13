@@ -29,6 +29,6 @@ runs:
       continue-on-error: true
 
     - name: Install dependencies
-      if: inputs.install-deps == true
+      # if: inputs.install-deps == true
       shell: bash
       run: npm ci
