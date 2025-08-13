@@ -23,9 +23,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Set up Nodejs
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Nodejs
       - name: Setup Node.js and Dependencies
-        uses: ./.github/setup-node
+        uses: ./.github/setup-node.yml
 
       # Step 2: Run linting (code style & quality)
       - name: Run ESLint
@@ -53,9 +57,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Set up Nodejs
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Nodejs
       - name: Setup Node.js and Dependencies
-        uses: ./.github/setup-node
+        uses: ./.github/setup-node.yml
 
       # Step 2: Audit npm packages for vulnerabilities
       - name: Audit npm packages
@@ -78,9 +86,13 @@ jobs:
     needs: test
 
     steps:
-      # Step 1: Build Docker image (without pushing)
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Build Docker image (without pushing)
       - name: Build Docker image
-        uses: ./.github/docker-build
+        uses: ./.github/docker-build.yml
         with:
           push: false
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
@@ -115,8 +127,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Setup Node.js without dependencies
-      uses: ./.github/setup-node
+      uses: ./.github/setup-node.yml
       with:
         install-deps: false
 
@@ -145,8 +160,11 @@ jobs:
     needs: test
 
     steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
     - name: Setup Node.js and Dependencies
-      uses: ./.github/setup-node
+      uses: ./.github/setup-node.yml
 
     - name: Build application
       run: npm run build
