@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile with Distroless for maximum security
 
 # Stage 1: Dependencies (install once, cache effectively)
-FROM node:18-alpine AS dependencies
+FROM node:24-alpine AS dependencies
 
 WORKDIR /app
 
