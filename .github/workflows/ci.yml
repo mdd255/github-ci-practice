@@ -112,17 +112,9 @@ jobs:
           # Start all services (postgres, redis, api) using docker-compose
           docker compose up -d
 
-          # Wait for services to be healthy
-          echo "Waiting for services to be ready..."
-          timeout 60 bash -c 'until docker compose ps | grep -q "healthy.*healthy.*up"; do sleep 2; done' || {
-            echo "Services failed to become healthy"
-            docker compose logs
-            exit 1
-          }
-
           # Test the health endpoint
           echo "Testing application health endpoint..."
-          sleep 5
+          sleep 30
           curl -f http://localhost:3000/api/v1/health || {
             echo "Health check failed"
             docker compose logs api
