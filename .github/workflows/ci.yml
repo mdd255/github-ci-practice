@@ -55,6 +55,10 @@ jobs:
   security:
     name: 🔒 Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
 
     steps:
       # Step 1: Checkout code
@@ -65,19 +69,37 @@ jobs:
       - name: Setup Node.js and Dependencies
         uses: ./.github/setup-node
 
-      # Step 2: Audit npm packages for vulnerabilities
+      # Step 3: Audit npm packages for vulnerabilities
       - name: Audit npm packages
         run: npm audit --audit-level=high
         continue-on-error: true
 
-      # Step 3: Run CodeQL analysis (GitHub's semantic code analysis)
+      # Step 4: Run CodeQL analysis (GitHub's semantic code analysis)
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: typescript
+          config: |
+            name: "CodeQL Config"
+            queries:
+              - uses: security-and-quality
+              - uses: security-extended
+            paths-ignore:
+              - "**/*.test.ts"
+              - "**/*.spec.ts"
+              - "**/node_modules/**"
+              - "**/dist/**"
+              - "**/coverage/**"
+              - "**/uploads/**"
+            paths:
+              - "src/**"
+          build-mode: none
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:typescript"
+          upload: true
 
   # Job 3: Docker Build Test
   docker-test:
@@ -136,31 +158,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js without dependencies
-      uses: ./.github/setup-node
-      with:
-        install-deps: false
+      - name: Setup Node.js without dependencies
+        uses: ./.github/setup-node
+        with:
+          install-deps: false
 
-    # Check for outdated packages
-    - name: Check outdated packages
-      run: |
-        npm outdated || true
+      # Check for outdated packages
+      - name: Check outdated packages
+        run: |
+          npm outdated || true
 
-    # Generate dependency tree
-    - name: Generate dependency tree
-      run: |
-        npm list --depth=0 > dependency-tree.txt
-        cat dependency-tree.txt
+      # Generate dependency tree
+      - name: Generate dependency tree
+        run: |
+          npm list --depth=0 > dependency-tree.txt
+          cat dependency-tree.txt
 
-    - name: Upload dependency report
-      uses: actions/upload-artifact@v4
-      with:
-        name: dependency-analysis
-        path: dependency-tree.txt
-        retention-days: 30
+      - name: Upload dependency report
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-analysis
+          path: dependency-tree.txt
+          retention-days: 30
 
   # Job 5: Performance & Size Analysis
   build-analysis:
@@ -169,36 +191,36 @@ jobs:
     needs: test
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js and Dependencies
-      uses: ./.github/setup-node
+      - name: Setup Node.js and Dependencies
+        uses: ./.github/setup-node
 
-    - name: Build application
-      run: npm run build
+      - name: Build application
+        run: npm run build
 
-    # Analyze build size
-    - name: Analyze build size
-      run: |
-        echo "=== Build Size Analysis ===" > build-analysis.txt
-        echo "Build directory size:" >> build-analysis.txt
-        du -sh dist/ >> build-analysis.txt
-        echo "" >> build-analysis.txt
-        echo "Largest files in build:" >> build-analysis.txt
-        find dist/ -type f -exec ls -la {} \; | sort -k5 -nr | head -10 >> build-analysis.txt
+      # Analyze build size
+      - name: Analyze build size
+        run: |
+          echo "=== Build Size Analysis ===" > build-analysis.txt
+          echo "Build directory size:" >> build-analysis.txt
+          du -sh dist/ >> build-analysis.txt
+          echo "" >> build-analysis.txt
+          echo "Largest files in build:" >> build-analysis.txt
+          find dist/ -type f -exec ls -la {} \; | sort -k5 -nr | head -10 >> build-analysis.txt
 
-        # Display the analysis
-        cat build-analysis.txt
+          # Display the analysis
+          cat build-analysis.txt
 
-    - name: Upload build analysis
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-analysis
-        path: |
-          build-analysis.txt
-          dist/
-        retention-days: 30
+      - name: Upload build analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-analysis
+          path: |
+            build-analysis.txt
+            dist/
+          retention-days: 30
 
   # Job 6: Final Status
   ci-complete:
@@ -208,24 +230,24 @@ jobs:
     if: always()
 
     steps:
-    - name: Check CI Status
-      run: |
-        echo "=== CI Pipeline Results ==="
-        echo "Test Job: ${{ needs.test.result }}"
-        echo "Security Job: ${{ needs.security.result }}"
-        echo "Docker Test Job: ${{ needs.docker-test.result }}"
-        echo "Dependency Check Job: ${{ needs.dependency-check.result }}"
-        echo "Build Analysis Job: ${{ needs.build-analysis.result }}"
+      - name: Check CI Status
+        run: |
+          echo "=== CI Pipeline Results ==="
+          echo "Test Job: ${{ needs.test.result }}"
+          echo "Security Job: ${{ needs.security.result }}"
+          echo "Docker Test Job: ${{ needs.docker-test.result }}"
+          echo "Dependency Check Job: ${{ needs.dependency-check.result }}"
+          echo "Build Analysis Job: ${{ needs.build-analysis.result }}"
 
-        # Fail if critical jobs failed
-        if [[ "${{ needs.test.result }}" != "success" ]]; then
-          echo "❌ Tests failed - this is critical!"
-          exit 1
-        fi
+          # Fail if critical jobs failed
+          if [[ "${{ needs.test.result }}" != "success" ]]; then
+            echo "❌ Tests failed - this is critical!"
+            exit 1
+          fi
 
-        if [[ "${{ needs.docker-test.result }}" != "success" ]]; then
-          echo "❌ Docker build failed - this is critical!"
-          exit 1
-        fi
+          if [[ "${{ needs.docker-test.result }}" != "success" ]]; then
+            echo "❌ Docker build failed - this is critical!"
+            exit 1
+          fi
 
-        echo "✅ CI Pipeline completed successfully!"
+          echo "✅ CI Pipeline completed successfully!"
