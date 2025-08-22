@@ -14,18 +14,18 @@ RUN npm ci --include=dev
 # Stage 2: Build (source code + compilation)
 FROM dependencies AS builder
 
+# Create non-root user and directories in builder stage (distroless can't create users)
+RUN addgroup -g 1001 -S nodejs \
+    && adduser -S nestjs -u 1001 \
+    && mkdir -p uploads \
+    && chown -R nestjs:nodejs /app
+
 # Copy source code (only rebuilds when source changes)
 COPY . .
 
 # Build the application and prune to production dependencies
 RUN npm run build \
     && npm prune --production
-
-# Create non-root user and directories in builder stage (distroless can't create users)
-RUN addgroup -g 1001 -S nodejs \
-    && adduser -S nestjs -u 1001 \
-    && mkdir -p uploads \
-    && chown -R nestjs:nodejs /app
 
 # Stage 3: Distroless production runtime (minimal security-focused image)
 FROM gcr.io/distroless/nodejs18-debian11

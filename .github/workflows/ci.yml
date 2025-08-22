@@ -116,7 +116,7 @@ jobs:
           sleep 10
 
           # Test if the app responds (using docker network)
-          docker exec ${{env.CONTAINER_NAME}} wget --quiet --spider ${{env.HEALTH_ENDPOINT}} || exit 1
+          wget --quiet --spider ${{env.HEALTH_ENDPOINT}} || exit 1
 
           # Cleanup
           docker stop ${{env.CONTAINER_NAME}}
