@@ -98,28 +98,37 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
           platforms: linux/amd64
 
-      # Step 3: Test the built image
-      - name: Test Docker image
-        env:
-          IMAGE_NAME: test-image
-          CONTAINER_NAME: test-container
-          PORT: 3000
-          HEALTH_ENDPOINT: http://localhost:3000/api/v1/health
+      # Step 3: Test the built image with docker-compose
+      - name: Test Docker image with full stack
         run: |
-          # Build the image locally for testing
-          docker build -t ${{env.IMAGE_NAME}} .
+          # Start all services (postgres, redis, api) using docker-compose
+          docker-compose up -d
 
-          # Run a quick test to ensure the image works
-          docker run --rm --name ${{env.CONTAINER_NAME}} -d -p ${{env.PORT}}:${{env.PORT}} ${{env.IMAGE_NAME}}
+          # Wait for services to be healthy
+          echo "Waiting for services to be ready..."
+          timeout 60 bash -c 'until docker-compose ps | grep -q "healthy.*healthy.*up"; do sleep 2; done' || {
+            echo "Services failed to become healthy"
+            docker-compose logs
+            exit 1
+          }
 
-          # Wait a moment for the app to start
-          sleep 10
+          # Test the health endpoint
+          echo "Testing application health endpoint..."
+          sleep 5
+          curl -f http://localhost:3000/api/v1/health || {
+            echo "Health check failed"
+            docker-compose logs api
+            exit 1
+          }
 
-          # Test if the app responds (using docker network)
-          wget --quiet --spider ${{env.HEALTH_ENDPOINT}} || exit 1
+          echo "✅ Docker compose stack test successful!"
 
-          # Cleanup
-          docker stop ${{env.CONTAINER_NAME}}
+      # Step 4: Cleanup
+      - name: Cleanup docker-compose
+        if: always()
+        run: |
+          docker-compose down -v
+          docker-compose rm -f
 
   # Job 4: Dependency Check
   dependency-check:
