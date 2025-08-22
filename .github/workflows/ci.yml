@@ -98,17 +98,25 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
           platforms: linux/amd64
 
+      # Step 2.5: Verify Docker Compose availability (optional debug step)
+      - name: Check Docker Compose
+        run: |
+          echo "Docker version:"
+          docker --version
+          echo "Docker Compose version:"
+          docker compose version
+
       # Step 3: Test the built image with docker-compose
       - name: Test Docker image with full stack
         run: |
           # Start all services (postgres, redis, api) using docker-compose
-          docker-compose up -d
+          docker compose up -d
 
           # Wait for services to be healthy
           echo "Waiting for services to be ready..."
-          timeout 60 bash -c 'until docker-compose ps | grep -q "healthy.*healthy.*up"; do sleep 2; done' || {
+          timeout 60 bash -c 'until docker compose ps | grep -q "healthy.*healthy.*up"; do sleep 2; done' || {
             echo "Services failed to become healthy"
-            docker-compose logs
+            docker compose logs
             exit 1
           }
 
@@ -117,7 +125,7 @@ jobs:
           sleep 5
           curl -f http://localhost:3000/api/v1/health || {
             echo "Health check failed"
-            docker-compose logs api
+            docker compose logs api
             exit 1
           }
 
@@ -127,8 +135,8 @@ jobs:
       - name: Cleanup docker-compose
         if: always()
         run: |
-          docker-compose down -v
-          docker-compose rm -f
+          docker compose down -v
+          docker compose rm -f
 
   # Job 4: Dependency Check
   dependency-check:
