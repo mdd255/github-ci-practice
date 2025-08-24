@@ -1,5 +1,5 @@
 # Stage 1: Dependencies
-FROM node:18-alpine AS dev-dependencies
+FROM node:24-alpine AS dev-dependencies
 
 WORKDIR /app
 
