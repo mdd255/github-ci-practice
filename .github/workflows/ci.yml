@@ -3,9 +3,10 @@ name: CI Pipeline
 # Trigger the workflow on push to main/develop and all pull requests
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
+
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 # Cancel in-progress workflows when a new one starts (saves resources)
 concurrency:
