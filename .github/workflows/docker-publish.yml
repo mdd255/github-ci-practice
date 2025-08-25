@@ -10,7 +10,7 @@ env:
 # 3. Manual trigger with environment selection
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
     # Only trigger if there are changes to the application
     paths:
       - 'src/**'
@@ -101,7 +101,7 @@ jobs:
     # Step 3: Build and push multi-platform Docker image
     - name: Build and push Docker image
       id: build
-      uses: ./.github/docker-build.yml
+      uses: ./.github/docker-build
       with:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
@@ -201,8 +201,8 @@ jobs:
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
-          
+          --health-retries 3
+
       # Test Redis
       redis:
         image: redis:7-alpine
@@ -210,7 +210,7 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 3
 
     steps:
     - name: Log in to Container Registry
@@ -278,12 +278,12 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Job Results:" >> $GITHUB_STEP_SUMMARY
         echo "- Build & Push: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY  
+        echo "- Security Scan: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
         echo "- Image Test: ${{ needs.image-test.result }}" >> $GITHUB_STEP_SUMMARY
-        
+
         # Check for failures
-        if [[ "${{ needs.build-and-push.result }}" != "success" ]] || 
-           [[ "${{ needs.image-test.result }}" != "success" ]]; then
+        if [[ "${{ needs.build-and-push.result }}" != "success" ]] ||
+          [[ "${{ needs.image-test.result }}" != "success" ]]; then
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "❌ **Deployment failed!** Check the job logs above." >> $GITHUB_STEP_SUMMARY
           exit 1
