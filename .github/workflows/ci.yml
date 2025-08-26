@@ -113,41 +113,75 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      # Step 1.5: Cache Docker images for services
+      - name: Cache Docker images
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            docker-images-
+
+      # Step 1.6: Load cached images or pull fresh
+      - name: Load or pull service images
+        run: |
+          mkdir -p /tmp/docker-images
+
+          # Try to load cached images
+          if [ -f /tmp/docker-images/postgres.tar ]; then
+            echo "Loading cached PostgreSQL image..."
+            docker load < /tmp/docker-images/postgres.tar
+          else
+            echo "Pulling PostgreSQL image..."
+            docker pull postgres:15-alpine
+            docker save postgres:15-alpine > /tmp/docker-images/postgres.tar
+          fi
+
+          if [ -f /tmp/docker-images/redis.tar ]; then
+            echo "Loading cached Redis image..."
+            docker load < /tmp/docker-images/redis.tar
+          else
+            echo "Pulling Redis image..."
+            docker pull redis:7-alpine
+            docker save redis:7-alpine > /tmp/docker-images/redis.tar
+          fi
+
+          echo "Service images ready"
+
       # Step 2: Build Docker image (without pushing)
       - name: Build Docker image
         uses: ./.github/docker-build
         with:
           push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
+          tags: api-test:latest
           platforms: linux/amd64
 
-      # Step 2.5: Verify Docker Compose availability (optional debug step)
-      - name: Check Docker Compose
+      # Step 3: Test the built image
+      - name: Test Docker image
         run: |
-          echo "Docker version:"
-          docker --version
-          echo "Docker Compose version:"
-          docker compose version
+          # Debug: Show available Docker images
+          echo "=== Available Docker images ==="
+          docker images
 
-      # Step 3: Test the built image with docker-compose
-      - name: Test Docker image with full stack
-        run: |
-          # Start all services (postgres, redis, api) using docker-compose
+          # Run the API container with connection to service containers
           docker compose up -d
+
+          # Wait for application to start
+          echo "Waiting for application to start..."
+          sleep 15
 
           # Test the health endpoint
           echo "Testing application health endpoint..."
-          sleep 30
           curl -f http://localhost:3000/api/v1/health || {
             echo "Health check failed"
-            docker compose logs api
+            docker logs api-test
             exit 1
           }
 
-          echo "✅ Docker compose stack test successful!"
+          echo "✅ Docker image test successful!"
 
       # Step 4: Cleanup
-      - name: Cleanup docker-compose
+      - name: Cleanup test container
         if: always()
         run: |
           docker compose down -v

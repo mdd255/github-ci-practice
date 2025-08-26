@@ -50,6 +50,7 @@ runs:
         file: ./Dockerfile
         platforms: ${{ inputs.platforms }}
         push: ${{ inputs.push }}
+        load: ${{ inputs.push == 'false' }}
         tags: ${{ inputs.tags }}
         labels: ${{ inputs.labels }}
         cache-from: type=gha
