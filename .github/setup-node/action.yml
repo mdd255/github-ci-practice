@@ -3,7 +3,7 @@ description: 'Setup Node.js with caching and optionally install dependencies'
 author: 'Learning Project'
 
 env:
-  NODE_VERSION: 24
+  NODE_VERSION: 18
 
 inputs:
   install-deps:
@@ -13,22 +13,30 @@ inputs:
 
 outputs:
   cache-hit:
-    description: 'Whether npm cache was hit'
-    value: ${{ steps.setup-node.outputs.cache-hit }}
+    description: 'Whether node_modules cache was hit'
+    value: ${{ steps.node-modules-cache.outputs.cache-hit }}
 
 runs:
   using: 'composite'
   steps:
     - name: Setup Node.js
-      id: setup-node
       uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
         cache-dependency-path: 'package-lock.json'
-      continue-on-error: true
 
-    - name: Install dependencies
-      if: ${{ inputs.install-deps }} == true
+    - name: Cache node_modules
+      if: inputs.install-deps == 'true'
+      id: node-modules-cache
+      uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-modules-
+
+    - name: Install dependencies (cache miss only)
+      if: inputs.install-deps == 'true' && steps.node-modules-cache.outputs.cache-hit != 'true'
       shell: bash
       run: npm ci
