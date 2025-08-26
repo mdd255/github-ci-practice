@@ -3,11 +3,8 @@ description: Build and publish Docker images to GitHub Container Registry
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
-# Trigger on:
-# 1. Push to main (deploy to production)
-# 2. Push to develop (deploy to staging) 
-# 3. Manual trigger with environment selection
 on:
   push:
     branches: [ main ]
@@ -45,6 +42,7 @@ jobs:
   build-and-push:
     name: 🐳 Build & Push Docker Images
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     # Required permissions for GitHub Packages
     permissions:
@@ -72,14 +70,14 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.repository }}
+        images: ${{ env.IMAGE_NAME }}
         tags: |
           # For main branch - production tags
           type=ref,event=branch,enable={{is_default_branch}}
           type=raw,value=production,enable={{is_default_branch}}
           type=raw,value=latest,enable={{is_default_branch}}
 
-          # For develop branch - staging tags  
+          # For develop branch - staging tags
           type=ref,event=branch,enable=${{ github.ref == 'refs/heads/develop' }}
           type=raw,value=staging,enable=${{ github.ref == 'refs/heads/develop' }}
 
@@ -98,25 +96,32 @@ jobs:
           org.opencontainers.image.description=NestJS API for learning Docker, Kubernetes, and CI/CD
           org.opencontainers.image.vendor=Learning Project
 
-    # Step 3: Build and push multi-platform Docker image
+    # Step 3: Set up Docker Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # Step 4: Build and push multi-platform Docker image
     - name: Build and push Docker image
       id: build
-      uses: ./.github/docker-build
+      uses: docker/build-push-action@v5
       with:
+        context: .
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        platforms: linux/amd64,linux/arm64
+        platforms: linux/amd64
         build-args: |
           NODE_VERSION=18
           BUILD_DATE=${{ github.event.head_commit.timestamp }}
           VCS_REF=${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
     # Step 5: Generate SBOM (Software Bill of Materials) for security
     - name: Generate SBOM
-      uses: anchore/sbom-action@v0
+      uses: anchore/sbom-action@v0.15.8
       with:
-        image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.repository }}:${{ github.sha }}
+        image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
         format: 'spdx-json'
         output-file: 'sbom.spdx.json'
 
@@ -131,6 +136,7 @@ jobs:
   security-scan:
     name: 🔒 Security Scan Image
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build-and-push
 
     permissions:
@@ -151,9 +157,9 @@ jobs:
 
     # Step 1: Scan image with Trivy (vulnerability scanner)
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@0.16.1
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ github.repository }}:${{ github.sha }}
+        image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
         format: 'sarif'
         output: 'trivy-results.sarif'
 
@@ -168,14 +174,14 @@ jobs:
     - name: Generate security report
       run: |
         echo "=== Docker Image Security Report ===" > security-report.md
-        echo "**Image:** ${{ needs.config.outputs.registry }}/${{ needs.config.outputs.image-name }}:${{ github.sha }}" >> security-report.md
+        echo "**Image:** ${{ env.IMAGE_NAME }}:${{ github.sha }}" >> security-report.md
         echo "**Scan Date:** $(date)" >> security-report.md
         echo "" >> security-report.md
 
         # Run Trivy again for table output
         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
           aquasec/trivy:latest image --format table \
-          ${{ needs.config.outputs.registry }}/${{ needs.config.outputs.image-name }}:${{ github.sha }} >> security-report.md || true
+          ${{ env.IMAGE_NAME }}:${{ github.sha }} >> security-report.md || true
 
     - name: Upload security report
       uses: actions/upload-artifact@v4
@@ -188,6 +194,7 @@ jobs:
   image-test:
     name: 🧪 Test Deployed Image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: build-and-push
 
     services:
@@ -225,12 +232,12 @@ jobs:
       run: |
         # Pull and run the image
         docker run --rm --name api-test \
-          --network ${{ job.container.network }} \
+          --network github_network_${{ github.run_id }} \
           -e DATABASE_URL="postgresql://postgres:testpass@postgres:5432/testdb" \
           -e REDIS_URL="redis://redis:6379" \
           -e JWT_SECRET="test-secret" \
           -d -p 3000:3000 \
-          ${{ needs.config.outputs.registry }}/${{ needs.config.outputs.image-name }}:${{ github.sha }}
+          ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
         # Wait for startup
         sleep 15
@@ -250,6 +257,7 @@ jobs:
   deployment-status:
     name: 📢 Deployment Status
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [build-and-push, security-scan, image-test]
     if: always()
 
