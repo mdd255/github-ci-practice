@@ -151,6 +151,7 @@ jobs:
       - name: Test Docker image
         run: |
           # Run the API container with connection to service containers
+          docker images && \
           docker run -d \
             --name api-test \
             --network host \
