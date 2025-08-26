@@ -144,14 +144,17 @@ jobs:
         uses: ./.github/docker-build
         with:
           push: false
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
+          tags: api-test:latest
           platforms: linux/amd64
 
       # Step 3: Test the built image
       - name: Test Docker image
         run: |
+          # Debug: Show available Docker images
+          echo "=== Available Docker images ==="
+          docker images
+
           # Run the API container with connection to service containers
-          docker images && \
           docker run -d \
             --name api-test \
             --network host \
@@ -169,7 +172,7 @@ jobs:
             -e JWT_REFRESH_EXPIRES_IN=7d \
             -e UPLOAD_DEST=./uploads \
             -e MAX_FILE_SIZE=5242880 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test
+            api-test:latest
 
           # Wait for application to start
           echo "Waiting for application to start..."
