@@ -157,7 +157,7 @@ jobs:
 
     # Step 1: Scan image with Trivy (vulnerability scanner)
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@0.16.1
+      uses: aquasecurity/trivy-action@0.35.0
       with:
         image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
         format: 'sarif'
